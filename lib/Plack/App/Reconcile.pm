@@ -93,6 +93,16 @@ __END__
 
 Plack::App::Reconcile - Reconciliation Service API
 
+=begin markdown
+
+# STATUS
+
+[![Build Status](https://travis-ci.org/nichtich/Plack-App-Reconcile.png)](https://travis-ci.org/nichtich/Plack-App-Reconcile)
+[![Coverage Status](https://coveralls.io/repos/nichtich/Plack-App-Reconcile/badge.png?branch=master)](https://coveralls.io/r/nichtich/Plack-App-Reconcile?branch=master)
+[![Kwalitee Score](http://cpants.cpanauthors.org/dist/Plack-App-Reconcile.png)](http://cpants.cpanauthors.org/dist/Plack-App-Reconcile)
+
+=end markdown
+
 =head1 SYNOPSIS
 
   use Plack::Builder;
@@ -161,7 +171,7 @@ following fields:
 
 =item match
 
-=cut
+=back
 
 =head1 SEE ALSO
 
