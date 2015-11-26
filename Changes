@@ -1,0 +1,4 @@
+# Change file for Plack::App::Reconcile
+
+{{$NEXT}}
+    - initial draft
