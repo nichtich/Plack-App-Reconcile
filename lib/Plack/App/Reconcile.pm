@@ -3,23 +3,39 @@ use v5.14;
 
 our $VERSION = '0.01';
 
-use parent 'Plack::Component';
+use parent 'Plack::Middleware::JSONP';
 
 use Moo;
+use Carp;
 use JSON;
 use Plack::Request;
 use Plack::Response;
 
-has name            => ( is => 'ro' );
-has identifierSpace => ( is => 'ro' );
-has schemaSpace     => ( is => 'ro' );
-has query           => ( is => 'ro' );
+has name            => ( is => 'ro', required => 1 );
+has identifierSpace => ( is => 'ro', required => 1 );
+has schemaSpace     => ( is => 'ro', required => 1 );
 
-sub call {
+has query => (
+    is      => 'ro',
+    isa     => sub { croak "query must be CODE ref" if ref $_[0] ne 'CODE' },
+    default => sub { sub { } },
+);
+
+# TODO: view, preview, suggest, defaultTypes (optional)
+
+# this gets wrapped by JSONP Middleware
+sub app {
+    my $self = shift;
+    return sub { $self->_call(@_) }
+}
+
+sub _call {
     my $self = shift;
     my $req  = Plack::Request->new(shift);
 
     my $query = $req->param('query');
+
+    # TODO: "queries" mode
 
     if ( ( $query // '' ) eq '' ) {
         return response( 200, $self->metadata );
@@ -44,8 +60,8 @@ sub call {
     # TODO: validate query object
 
     my $res = defined $query->{query}
-      ? $self->reconconcile($query)    # single query mode
-      : do {                           # multiple query mode
+      ? $self->reconcile($query)    # single query mode
+      : do {                        # multiple query mode
 
         # TODO: parallel (fork?)
         { map { $_ => $self->reconcile( $query->{$_} ) } keys %$query };
@@ -57,9 +73,15 @@ sub call {
 sub reconcile {
     my ( $self, $query ) = @_;
 
-    my $hits = $self->query ? $self->query($query) : [];
+    my $hits = $self->query->($query) // [];
 
-    # TODO: map map 'match' to JSON::Boolean if given
+    # TODO: validate hits
+    foreach (@$hits) {
+        # express match as JSON::Boolean
+        if ( defined $_->{match} ) {
+            $_->{match} = $_->{match} ? JSON::true : JSON::false;
+        }
+    }
 
     return { result => $hits };
 }
@@ -77,7 +99,7 @@ sub metadata {
 sub response {
     my ( $status, $data ) = @_;
 
-    my $json    = to_json($data);
+    my $json    = JSON->new->utf8->canonical->pretty->encode($data);
     my $headers = [
         'Content-Type'   => 'application/json',
         'Content-Length' => length $json,
@@ -108,16 +130,15 @@ Plack::App::Reconcile - Reconciliation Service API
   use Plack::Builder;
   use Plack::App::Reconcile;
 
-  my $app = Plack::App::Reconcile( 
-    name            => "name of the reconconciliation service",    
+  my $app = Plack::App::Reconcile(
+    name            => "...",
     identifierSpace => "...",
     schemaSpace     => "...",
     query           => sub { my ($query) = $@; ... return \@entities },
   );
 
   builder {
-    enable CORS;
-    enable JSONP;
+    enable CrossOrigin, origins => '*';
     $app;
   };
 
@@ -125,10 +146,47 @@ Plack::App::Reconcile - Reconciliation Service API
 
 This module implements a Reconciliation Service as L<PSGI> application.
 
-The Reconconciliation Service API is used and defined by OpenRefine.
+The B<Reconconciliation Service API> is used and defined by OpenRefine.
 
 To implement an actual service, provide a C<query> function or override method
-C<reconcile> when subclassing this module (by the way it uses L<Moo>).
+C<reconcile> when subclassing this module (it already uses L<Moo>).
+
+The service supports JSONP with callback parameter C<callback>. Support of
+CORS can be added with L<Plack::Middleware::CrossOrigin>.
+
+=head2 query object
+
+=over
+
+=item query
+
+=item limit
+
+=item type
+
+=item type_strict
+
+=item properties
+
+=back
+
+=head2 result objects
+
+Each result object refers to one entity with the following fields:
+
+=over
+
+=item id
+
+=item name
+
+=item type 
+
+=item score
+
+=item match
+
+=back
 
 =head1 METHODS
 
@@ -146,13 +204,16 @@ Creates a new reconciliation service with the following configuration fields:
 
 =item query
 
+A function that maps a L</query object> to a list of L</result objects>,
+returned as array reference.
+
 =back
 
 =head2 reconcile( $query )
 
 Given a B<query object> this method returns a result hash with key C<result>
 mapped to a list of matching entities. Delegates to function C<query> by
-default. 
+default and wraps its return value as C<< { result => \@result } >>.
 
 =head2 entities
 
